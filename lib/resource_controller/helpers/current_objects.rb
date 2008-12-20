@@ -60,7 +60,7 @@ module ResourceController
         # Returns the form params.  Defaults to params[model_name] (i.e. params["post"])
         #
         def object_params
-          params["#{object_name}"]
+          params["#{object_name}"] || {}.with_indifferent_access
         end
     
         # Builds the object, but doesn't save it, during the new, and create action.
