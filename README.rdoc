@@ -30,6 +30,145 @@ Both syntaxes are identical in their behavior.  Just make sure you call resource
   
 Nobody just uses the default RESTful controller, though.  resource_controller provides a simple API for customizations.
 
+== Default Action Lifecycle
+
+vendor/plugins/resource_controller/lib/resource_controller/actions.rb:
+
+    def index
+      load_collection
+      before :index
+      response_for :index
+    end
+    
+    def show
+      load_object
+      before :show
+      response_for :show
+    rescue ActiveRecord::RecordNotFound
+      response_for :show_fails
+    end
+
+    def create
+      build_object
+      load_object
+      before :create
+      if object.save
+        after :create
+        set_flash :create
+        response_for :create
+      else
+        after :create_fails
+        set_flash :create_fails
+        response_for :create_fails
+      end
+    end
+
+    def update
+      load_object
+      before :update
+      if object.update_attributes object_params
+        after :update
+        set_flash :update
+        response_for :update
+      else
+        after :update_fails
+        set_flash :update_fails
+        response_for :update_fails
+      end
+    end
+
+    def new
+      build_object
+      load_object
+      before :new_action
+      response_for :new_action
+    end
+
+    def edit
+      load_object
+      before :edit
+      response_for :edit
+    end
+
+    def destroy
+      load_object
+      before :destroy
+      if object.destroy
+        after :destroy
+        set_flash :destroy
+        response_for :destroy
+      else
+        after :destroy_fails
+        set_flash :destroy_fails
+        response_for :destroy_fails
+      end
+    end
+
+
+
+vendor/plugins/resource_controller/lib/resource_controller/helpers/current_objects.rb
+        # Used internally to load the member object in to an instance variable @#{model_name} (i.e. @post)
+        #
+        def load_object
+          instance_variable_set "@#{parent_type}", parent_object if parent?
+          instance_variable_set "@#{object_name}", object
+        end
+
+        # Used to fetch the current member object in all of the singular methods that operate on an existing member.
+        #
+        # Override this method if you'd like to fetch your objects in some alternate way, like using a permalink.
+        #
+        # class PostsController < ResourceController::Base
+        #   private
+        #     def object
+        #       @object ||= end_of_association_chain.find_by_permalink(param)
+        #     end
+        #   end
+        #
+        def object
+          @object ||= end_of_association_chain.find(param) unless param.nil?
+          @object
+        end
+
+vendor/plugins/resource_controller/lib/resource_controller/helpers/singleton_customizations.rb
+        # Used to fetch the current object in a singleton controller.
+        #
+        # By defult this method is able to fetch the current object for resources nested with the :has_one association only. (i.e. /users/1/image # => @user.image)
+        # In other cases you should override this method and provide your custom code to fetch a singleton resource object, like using a session hash.
+        #
+        # class AccountsController < ResourceController::Singleton
+        #   private
+        #     def object
+        #       @object ||= Account.find(session[:account_id])
+        #     end
+        #   end
+        #  
+        def object
+          @object ||= parent? ? end_of_association_chain : nil
+        end
+
+
+=== new_action
+
+A new object is built/initialized by build_object (which can be overridden if you need something custom).
+
+This object can be accessed via any of: object, @object, and @model_name (f.e., @address for AddressesControler)
+
+One of these versions of build_object, depending on whether resource is singleton or not:
+
+vendor/plugins/resource_controller/lib/resource_controller/helpers/singleton_customizations.rb
+        # Builds the object, but doesn't save it, during the new, and create action.
+        #
+        def build_object
+          @object ||= singleton_build_object_base.send parent? ? "build_#{model_name}".to_sym : :new, object_params
+        end
+
+vendor/plugins/resource_controller/lib/resource_controller/helpers/current_objects.rb
+        def build_object
+          @object ||= end_of_association_chain.send parent? ? :build : :new, object_params
+        end
+
+
 == Action Lifecycle
 
 It's really easy to make changes to the lifecycle of your actions.
